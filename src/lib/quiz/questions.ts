@@ -208,6 +208,17 @@ export function calculateSpectrumScore(
   return avg / 2
 }
 
+// Maps spectrum score to a political label matching the available set
+export function scoreToLabel(score: number): string {
+  if (score <= -0.6) return 'Progressive'
+  if (score <= -0.3) return 'Liberal'
+  if (score <= -0.1) return 'Moderate Liberal'
+  if (score <= 0.1) return 'Centrist'
+  if (score <= 0.3) return 'Moderate Conservative'
+  if (score <= 0.6) return 'Conservative'
+  return 'Conservative'
+}
+
 export function formatSpectrumLabel(score: number): string {
   if (score <= -0.75) return 'Far Left'
   if (score <= -0.4) return 'Left'

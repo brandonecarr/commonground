@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { QUIZ_QUESTIONS, calculateSpectrumScore } from '@/lib/quiz/questions'
+import { QUIZ_QUESTIONS, calculateSpectrumScore, scoreToLabel } from '@/lib/quiz/questions'
 import { POLITICAL_LABELS } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -64,12 +64,14 @@ export default function OnboardingPage() {
         body: JSON.stringify({ politicalResponses, spectrumScore: score }),
       })
       const data = await res.json()
-      setAiLabel(data.label || 'Centrist')
+      const fallback = scoreToLabel(score)
+      setAiLabel(data.label || fallback)
       setAiExplanation(data.explanation || '')
-      setSelectedLabel(data.label || 'Centrist')
+      setSelectedLabel(data.label || fallback)
     } catch {
-      setAiLabel('Centrist')
-      setSelectedLabel('Centrist')
+      const fallback = scoreToLabel(score)
+      setAiLabel(fallback)
+      setSelectedLabel(fallback)
     }
 
     setState('result')
