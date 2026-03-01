@@ -57,13 +57,13 @@ export default function TopicSelector({ topics, profile }: TopicSelectorProps) {
       body: JSON.stringify({ topicId }),
     })
 
+    const data = await res.json()
+
     if (!res.ok) {
-      toast.error('Could not join queue. Try again.')
+      toast.error(data.error || 'Could not join queue. Try again.')
       setIsQueuing(false)
       return
     }
-
-    const data = await res.json()
 
     // If immediately matched
     if (data.sessionId) {

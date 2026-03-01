@@ -20,7 +20,8 @@ export async function POST(req: NextRequest) {
 
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-  const spectrumScore = profile.spectrum_score as number
+  // Guard against null spectrum_score (profile backfilled without quiz)
+  const spectrumScore = (profile.spectrum_score as number) ?? 0
 
   // Remove from queue if already in it
   await serviceSupabase.from('matchmaking_queue').delete().eq('user_id', user.id)
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (bestMatch) {
     const finalTopicId = await pickTopic(serviceSupabase, topicId, bestMatch.topic_id)
 
-    const { data: session } = await serviceSupabase
+    const { data: session, error: sessionError } = await serviceSupabase
       .from('debate_sessions')
       .insert({
         topic_id: finalTopicId,
@@ -48,17 +49,27 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
+    if (sessionError || !session) {
+      console.error('Session create error:', sessionError)
+      return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
+    }
+
     await serviceSupabase.from('matchmaking_queue').delete().eq('user_id', bestMatch.user_id)
 
-    return NextResponse.json({ sessionId: session?.id })
+    return NextResponse.json({ sessionId: session.id })
   }
 
   // No match found — add to queue
-  await serviceSupabase.from('matchmaking_queue').insert({
+  const { error: queueError } = await serviceSupabase.from('matchmaking_queue').insert({
     user_id: user.id,
     topic_id: topicId || null,
     spectrum_score: spectrumScore,
   })
+
+  if (queueError) {
+    console.error('Queue insert error:', queueError)
+    return NextResponse.json({ error: `Queue error: ${queueError.message}` }, { status: 500 })
+  }
 
   return NextResponse.json({ queued: true })
 }
