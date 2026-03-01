@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { minimax, MINIMAX_MODEL } from '@/lib/minimax/client'
+import { getMinimax, MINIMAX_MODEL } from '@/lib/minimax/client'
 import { LABEL_SYSTEM_PROMPT } from '@/lib/minimax/prompts'
 
 export async function POST(req: NextRequest) {
   try {
     const { politicalResponses, spectrumScore } = await req.json()
 
-    const completion = await minimax.chat.completions.create({
+    const completion = await getMinimax().chat.completions.create({
       model: MINIMAX_MODEL,
       messages: [
         { role: 'system', content: LABEL_SYSTEM_PROMPT },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { minimax, MINIMAX_MODEL } from '@/lib/minimax/client'
+import { getMinimax, MINIMAX_MODEL } from '@/lib/minimax/client'
 import { SCORING_SYSTEM_PROMPT } from '@/lib/minimax/prompts'
 
 export async function POST(
@@ -66,7 +66,7 @@ export async function POST(
   const topic = (session.topics as { title?: string } | null)?.title ?? 'political topic'
 
   try {
-    const completion = await minimax.chat.completions.create({
+    const completion = await getMinimax().chat.completions.create({
       model: MINIMAX_MODEL,
       messages: [
         { role: 'system', content: SCORING_SYSTEM_PROMPT },

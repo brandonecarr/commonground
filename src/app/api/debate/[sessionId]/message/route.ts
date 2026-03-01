@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { minimax, MINIMAX_MODEL } from '@/lib/minimax/client'
+import { getMinimax, MINIMAX_MODEL } from '@/lib/minimax/client'
 import { MODERATION_SYSTEM_PROMPT } from '@/lib/minimax/prompts'
 
 export async function POST(
@@ -59,7 +59,7 @@ export async function POST(
   // AI Moderation — run async, don't block response
   try {
     const topic = (session.topics as { title?: string } | null)?.title ?? 'political topic'
-    const completion = await minimax.chat.completions.create({
+    const completion = await getMinimax().chat.completions.create({
       model: MINIMAX_MODEL,
       messages: [
         { role: 'system', content: MODERATION_SYSTEM_PROMPT },
