@@ -26,6 +26,14 @@ export default async function ProfilePage({
 
   if (!profile) notFound()
 
+  // Get posts
+  const { data: posts } = await supabase
+    .from('posts')
+    .select('id, content, created_at')
+    .eq('user_id', profile.id)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
   // Get debate history
   const { data: scores } = await supabase
     .from('debate_scores')
@@ -143,6 +151,37 @@ export default async function ProfilePage({
           )
         })}
       </div>
+
+      {/* Posts */}
+      <Card className="border-slate-700 bg-slate-800/50">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-green-400" />
+            Posts
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!posts || posts.length === 0 ? (
+            <p className="text-slate-400 text-center py-8">No posts yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {posts.map((post, i) => (
+                <div key={post.id}>
+                  {i > 0 && <Separator className="bg-slate-700" />}
+                  <div className="py-2">
+                    <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                    <p className="text-slate-600 text-xs mt-1">
+                      {new Date(post.created_at).toLocaleDateString(undefined, {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Debate History */}
       <Card className="border-slate-700 bg-slate-800/50">

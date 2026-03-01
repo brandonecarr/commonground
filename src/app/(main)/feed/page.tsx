@@ -68,13 +68,13 @@ export default async function FeedPage() {
       <CreatePost userId={user!.id} />
 
       {/* Feed */}
-      {friendIds.length === 0 && (posts?.filter(p => p.user_id !== user!.id).length ?? 0) === 0 ? (
+      {!posts || posts.length === 0 ? (
         <Card className="border-slate-700 bg-slate-800/30">
           <CardContent className="py-12 text-center">
             <Users className="w-12 h-12 text-slate-600 mx-auto mb-4" />
             <h3 className="text-white font-semibold mb-2">Your feed is empty</h3>
             <p className="text-slate-400 text-sm max-w-sm mx-auto mb-4">
-              Complete a debate and add your opponent as a friend. Their posts will appear here — even if you disagree on everything.
+              Post something above, or complete a debate and add your opponent as a friend. Their posts will appear here — even if you disagree on everything.
             </p>
             <Link
               href="/debate"
