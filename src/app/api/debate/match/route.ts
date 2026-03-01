@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { pickTopic, findBestMatch } from '@/lib/matchmaking'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -24,52 +25,17 @@ export async function POST(req: NextRequest) {
   // Remove from queue if already in it
   await serviceSupabase.from('matchmaking_queue').delete().eq('user_id', user.id)
 
-  // Find the best opponent — someone with the most opposite spectrum score
-  // If topicId is specified, match on that topic; otherwise any
-  let query = serviceSupabase
+  // Find the best opponent — match anyone in the queue regardless of topic
+  const { data: candidates } = await serviceSupabase
     .from('matchmaking_queue')
     .select('*')
     .neq('user_id', user.id)
     .order('joined_at', { ascending: true })
 
-  // If a topic was specified, try to match on same topic OR roulette (null topic) players
-  // For roulette entry (null topicId), match with anyone
-  if (topicId) {
-    query = query.or(`topic_id.eq.${topicId},topic_id.is.null`)
-  }
-
-  const { data: candidates } = await query
-
-  // Find best match: most opposite spectrum
-  let bestMatch = null
-  let bestDiff = -1
-
-  if (candidates && candidates.length > 0) {
-    for (const candidate of candidates) {
-      const diff = Math.abs(spectrumScore - (candidate.spectrum_score as number))
-      if (diff > bestDiff) {
-        bestDiff = diff
-        bestMatch = candidate
-      }
-    }
-  }
+  const bestMatch = findBestMatch(spectrumScore, candidates || [])
 
   if (bestMatch) {
-    // Create the debate session
-    // Pick the topic: prefer the specified topic, fallback to opponent's topic
-    const sessionTopic = topicId || bestMatch.topic_id || null
-
-    // If roulette, pick a random active topic
-    let finalTopicId = sessionTopic
-    if (!finalTopicId) {
-      const { data: randomTopics } = await serviceSupabase
-        .from('topics')
-        .select('id')
-        .eq('is_active', true)
-      if (randomTopics && randomTopics.length > 0) {
-        finalTopicId = randomTopics[Math.floor(Math.random() * randomTopics.length)].id
-      }
-    }
+    const finalTopicId = await pickTopic(serviceSupabase, topicId, bestMatch.topic_id)
 
     const { data: session } = await serviceSupabase
       .from('debate_sessions')
@@ -82,7 +48,6 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
-    // Remove matched user from queue
     await serviceSupabase.from('matchmaking_queue').delete().eq('user_id', bestMatch.user_id)
 
     return NextResponse.json({ sessionId: session?.id })
