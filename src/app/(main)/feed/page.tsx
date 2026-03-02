@@ -3,30 +3,18 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { MessageSquare, Users } from 'lucide-react'
 import CreatePost from '@/components/feed/CreatePost'
 import FriendRequests from '@/components/feed/FriendRequests'
+import Challenges from '@/components/feed/Challenges'
+import DebateButton from '@/components/feed/DebateButton'
 import { formatSpectrumLabel } from '@/lib/quiz/questions'
 
 export default async function FeedPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Get accepted friends
-  const { data: friendships } = await supabase
-    .from('friendships')
-    .select('requester_id, addressee_id')
-    .or(`requester_id.eq.${user!.id},addressee_id.eq.${user!.id}`)
-    .eq('status', 'accepted')
-
-  const friendIds = (friendships || []).map(f =>
-    f.requester_id === user!.id ? f.addressee_id : f.requester_id
-  )
-
-  // Get posts from friends + self
-  const feedUserIds = [user!.id, ...friendIds]
-
+  // All posts — global feed
   const { data: posts } = await supabase
     .from('posts')
     .select(`
@@ -35,7 +23,6 @@ export default async function FeedPage() {
         id, username, spectrum_score, political_label, custom_label
       )
     `)
-    .in('user_id', feedUserIds)
     .order('created_at', { ascending: false })
     .limit(50)
 
@@ -51,17 +38,54 @@ export default async function FeedPage() {
     .eq('addressee_id', user!.id)
     .eq('status', 'pending')
 
+  // Incoming debate challenges (someone challenged me)
+  const { data: incomingChallenges } = await supabase
+    .from('debate_challenges')
+    .select(`
+      id, challenger_id, challengee_id, session_id, status,
+      challenger:profiles!debate_challenges_challenger_id_fkey (
+        id, username, political_label, custom_label, spectrum_score
+      )
+    `)
+    .eq('challengee_id', user!.id)
+    .eq('status', 'pending')
+
+  // My sent challenges that were accepted (time to join)
+  const { data: acceptedChallenges } = await supabase
+    .from('debate_challenges')
+    .select(`
+      id, challenger_id, challengee_id, session_id, status,
+      challengee:profiles!debate_challenges_challengee_id_fkey (
+        id, username
+      )
+    `)
+    .eq('challenger_id', user!.id)
+    .eq('status', 'accepted')
+    .not('session_id', 'is', null)
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-1">Your Feed</h1>
-        <p className="text-slate-400 text-sm">Posts from you and your CommonGround friends</p>
+        <h1 className="text-3xl font-bold text-white mb-1">Feed</h1>
+        <p className="text-slate-400 text-sm">See what everyone across the spectrum is saying</p>
       </div>
 
       {/* Pending friend requests */}
       {pendingRequests && pendingRequests.length > 0 && (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         <FriendRequests requests={pendingRequests as any} currentUserId={user!.id} />
+      )}
+
+      {/* Debate challenges */}
+      {((incomingChallenges && incomingChallenges.length > 0) ||
+        (acceptedChallenges && acceptedChallenges.length > 0)) && (
+        <Challenges
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          incoming={incomingChallenges as any || []}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          accepted={acceptedChallenges as any || []}
+          currentUserId={user!.id}
+        />
       )}
 
       {/* Create post */}
@@ -72,9 +96,9 @@ export default async function FeedPage() {
         <Card className="border-slate-700 bg-slate-800/30">
           <CardContent className="py-12 text-center">
             <Users className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-            <h3 className="text-white font-semibold mb-2">Your feed is empty</h3>
+            <h3 className="text-white font-semibold mb-2">No posts yet</h3>
             <p className="text-slate-400 text-sm max-w-sm mx-auto mb-4">
-              Post something above, or complete a debate and add your opponent as a friend. Their posts will appear here — even if you disagree on everything.
+              Be the first to post, or jump into a debate to meet people from across the spectrum.
             </p>
             <Link
               href="/debate"
@@ -87,7 +111,7 @@ export default async function FeedPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {posts?.map((post, i) => {
+          {posts?.map((post) => {
             const profile = post.profile as {
               id: string
               username: string
@@ -123,14 +147,23 @@ export default async function FeedPage() {
                         {isMe && <span className="text-slate-600 text-xs">· you</span>}
                       </div>
                       <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
-                      <p className="text-slate-600 text-xs mt-2">
-                        {new Date(post.created_at).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-slate-600 text-xs">
+                          {new Date(post.created_at).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                        {!isMe && (
+                          <DebateButton
+                            postAuthorId={profile.id}
+                            postAuthorUsername={profile.username}
+                            currentUserId={user!.id}
+                          />
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>

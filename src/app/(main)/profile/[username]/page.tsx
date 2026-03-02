@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +15,8 @@ export default async function ProfilePage({
 }) {
   const { username } = await params
   const supabase = await createClient()
+  // Service client bypasses debate_sessions RLS so visitors can see all debate history
+  const serviceSupabase = createServiceClient()
 
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -34,8 +36,9 @@ export default async function ProfilePage({
     .order('created_at', { ascending: false })
     .limit(20)
 
-  // Get debate history
-  const { data: scores } = await supabase
+  // Get debate history — use service client so RLS on debate_sessions
+  // doesn't hide sessions when viewing another user's profile
+  const { data: scores } = await serviceSupabase
     .from('debate_scores')
     .select(`
       *,
@@ -128,7 +131,6 @@ export default async function ProfilePage({
           { label: 'On Topic', icon: MessageSquare, color: 'text-blue-400' },
           { label: 'Open-Minded', icon: Trophy, color: 'text-purple-400' },
         ].map(({ label, icon: Icon, color }) => {
-          const key = label.toLowerCase().replace(/[\s-]/g, '_').replace('use', 'use').replace('on ', '').replace('open-minded', 'open_mindedness').replace('on_topic', 'topic_adherence').replace('respectfulness', 'respectfulness').replace('evidence_use', 'evidence_use')
           const validKey = label === 'Respectfulness' ? 'respectfulness'
             : label === 'Evidence Use' ? 'evidence_use'
             : label === 'On Topic' ? 'topic_adherence'
