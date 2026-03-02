@@ -39,21 +39,43 @@ export async function POST(
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true })
 
+  // Helper: save scores for one user and update their profile
+  async function saveScoresForUser(
+    uid: string,
+    scores: { respectfulness: number; evidence_use: number; topic_adherence: number; open_mindedness: number },
+  ) {
+    const total = scores.respectfulness + scores.evidence_use + scores.topic_adherence + scores.open_mindedness
+    const meritPoints = Math.round(total / 2)
+
+    await serviceSupabase.from('debate_scores').upsert({
+      session_id: sessionId,
+      user_id: uid,
+      ...scores,
+      total_score: total,
+      merit_points_awarded: meritPoints,
+    })
+
+    const { data: profile } = await serviceSupabase
+      .from('profiles')
+      .select('total_merit_points, debates_completed')
+      .eq('id', uid)
+      .single()
+
+    if (profile) {
+      await serviceSupabase.from('profiles').update({
+        total_merit_points: (profile.total_merit_points || 0) + meritPoints,
+        debates_completed: (profile.debates_completed || 0) + 1,
+      }).eq('id', uid)
+    }
+  }
+
+  const defaultScores = { respectfulness: 5, evidence_use: 5, topic_adherence: 5, open_mindedness: 5 }
+
   if (!allMessages || allMessages.length < 2) {
-    // Not enough messages to score — give default scores
-    const defaultScore = { respectfulness: 5, evidence_use: 5, topic_adherence: 5, open_mindedness: 5 }
+    // Not enough messages — give default scores and update profiles
     for (const uid of [session.user1_id, session.user2_id]) {
       if (!uid) continue
-      const total = 20
-      const points = 10
-      await serviceSupabase.from('debate_scores').upsert({
-        session_id: sessionId,
-        user_id: uid,
-        ...defaultScore,
-        total_score: total,
-        merit_points_awarded: points,
-      })
-      // Profile update happens below in main flow
+      await saveScoresForUser(uid, defaultScores)
     }
     return NextResponse.json({ ok: true })
   }
@@ -64,6 +86,9 @@ export async function POST(
     .join('\n')
 
   const topic = (session.topics as { title?: string } | null)?.title ?? 'political topic'
+
+  // Try AI scoring, fall back to defaults if MiniMax is unavailable
+  let aiResult: Record<string, Record<string, number>> | null = null
 
   try {
     const completion = await getMinimax().chat.completions.create({
@@ -80,51 +105,24 @@ export async function POST(
     })
 
     const text = completion.choices[0].message.content || '{}'
-    const result = JSON.parse(text)
-
-    const userMap = {
-      user1: session.user1_id,
-      user2: session.user2_id,
-    }
-
-    for (const [key, uid] of Object.entries(userMap)) {
-      if (!uid) continue
-      const scores = result[key] || { respectfulness: 5, evidence_use: 5, topic_adherence: 5, open_mindedness: 5 }
-      const total =
-        (scores.respectfulness || 5) +
-        (scores.evidence_use || 5) +
-        (scores.topic_adherence || 5) +
-        (scores.open_mindedness || 5)
-      const meritPoints = Math.round(total / 2)
-
-      await serviceSupabase.from('debate_scores').upsert({
-        session_id: sessionId,
-        user_id: uid,
-        respectfulness: scores.respectfulness || 5,
-        evidence_use: scores.evidence_use || 5,
-        topic_adherence: scores.topic_adherence || 5,
-        open_mindedness: scores.open_mindedness || 5,
-        total_score: total,
-        merit_points_awarded: meritPoints,
-      })
-
-      // Update profile merit points and debate count
-      const { data: profile } = await serviceSupabase
-        .from('profiles')
-        .select('total_merit_points, debates_completed')
-        .eq('id', uid)
-        .single()
-
-      if (profile) {
-        await serviceSupabase.from('profiles').update({
-          total_merit_points: (profile.total_merit_points || 0) + meritPoints,
-          debates_completed: (profile.debates_completed || 0) + 1,
-        }).eq('id', uid)
-      }
-    }
+    const match = text.match(/\{[\s\S]*\}/)
+    if (match) aiResult = JSON.parse(match[0])
   } catch (err) {
-    console.error('Scoring error:', err)
-    // Fallback: give basic scores
+    console.error('Scoring error (using fallback defaults):', err)
+  }
+
+  const userMap: Record<string, string> = { user1: session.user1_id, user2: session.user2_id }
+
+  for (const [key, uid] of Object.entries(userMap)) {
+    if (!uid) continue
+    const raw = aiResult?.[key]
+    const scores = {
+      respectfulness: raw?.respectfulness || defaultScores.respectfulness,
+      evidence_use: raw?.evidence_use || defaultScores.evidence_use,
+      topic_adherence: raw?.topic_adherence || defaultScores.topic_adherence,
+      open_mindedness: raw?.open_mindedness || defaultScores.open_mindedness,
+    }
+    await saveScoresForUser(uid, scores)
   }
 
   return NextResponse.json({ ok: true })
